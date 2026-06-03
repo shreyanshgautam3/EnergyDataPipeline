@@ -1,0 +1,14 @@
+.venv/
+venv/
+ENV/
+
+__pycache__/
+*.pyc
+
+.env
+*.secret
+
+*.db
+*.sqlite
+data/raw/
+data/processed/
