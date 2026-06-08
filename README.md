@@ -1,51 +1,174 @@
-# Global Power Plant Efficiency Pipeline
+# Global Power Plant AI Analysis Pipeline
 
-### Project Context
-Modern data analysis often starts with a significant hurdle: raw datasets are frequently too large for standard hardware and too "noisy" for immediate use. This project serves as a Production-Grade ETL (Extract, Transform, Load) solution designed to bridge that gap.
+A two-layer data pipeline that ingests and transforms a global power plant dataset, loads it into PostgreSQL, then queries anomalies and passes structured context to the **Google Gemini 2.5 Flash** API to generate operational incident reports.
 
-By utilizing the Global Power Plant Database, I developed a modular, class-based pipeline that prioritizes memory efficiency and data integrity, transforming 30,000+ rows of raw information into a streamlined dataset housed in a relational database.
+---
 
-### Technical Approach
+## Architecture
 
-1. Object-Oriented Architecture (OOP):
-The pipeline is refactored from a procedural script into a modular PowerPlantETL class. This approach improves maintainability, allows for easier unit testing, and follows industry-standard software engineering patterns.
+```
+CSV Dataset
+    │
+    ▼
+[ pipeline.py ]  ── Extract → Transform → Load ──▶  PostgreSQL
+                                                          │
+                                                          ▼
+                                                  [ analyzer.py ]
+                                                  Threshold Query
+                                                          │
+                                                          ▼
+                                                  Gemini 2.5 Flash
+                                                          │
+                                                          ▼
+                                              AI Incident Report (stdout)
+```
 
-2. High-Performance Ingestion:
-Instead of a standard load, the pipeline uses strategic schema definitions:
+---
 
-- Downcasting: Capacity metrics are stored as float32.
+## Layer 1 — ETL Pipeline (`pipeline.py`)
 
-- Categorical Encoding: Repetitive strings like 'Country' and 'Fuel Type' are converted to categories.
+Handles ingestion and transformation of the [Global Power Plant Database](https://datasets.wri.org/dataset/globalpowerplantdatabase) CSV.
 
-- Result: Reduced the initial memory footprint by approximately 90%, ensuring stability on limited-resource environments.
+**Extract**
+- Reads selected columns with memory-optimised `dtype` mapping (`category`, `float32`)
+- Reports initial memory usage on load
 
-3. Contextual Data Repair (Data Science Logic):
-Real-world data is rarely complete. Rather than using a generic "fill-all" approach for missing commissioning years, the script uses a grouped median strategy. It calculates the median age of plants within the specific fuel category (e.g., matching a missing Hydro plant year with other Hydro plants), preserving the statistical integrity of the timeline.
+**Transform**
+- Strips and title-cases plant names
+- Applies fuel-type-grouped median imputation for missing `commissioning_year` values
+- Engineers two features:
+  - `is_renewable` — boolean flag based on fuel type classification
+  - `renewable_capacity_mw` — derived capacity for renewable plants only
 
-4. Advanced Feature Engineering:
-The pipeline classifies facilities into "Renewable" and "Non-Renewable" categories using vectorized operations. It also calculates renewable_capacity_mw as a specific feature for immediate green-energy analytics.
+**Load**
+- Loads the cleaned DataFrame into a PostgreSQL table (`power_plants_cleaned`) via SQLAlchemy
 
-### Tools and Infrastructure
-Language        -> Python | 
-Data Processing -> Pandas | 
-Database Engine -> SQLAlchemy | 
-Storage         -> PostgreSQL (Relational) | 
-Workflow        -> Object-Oriented ETL Class
+---
 
-### Getting Started
-#### Prerequisites
-- A running PostgreSQL instance
-- A database named energy_db
+## Layer 2 — AI Analyzer (`analyzer.py`)
 
-#### Setup
-1. Clone the repo:
-   git clone https://github.com/shreygtm3-png/EnergyDataPipeline.git
+Queries anomaly data from the loaded table and sends it to the Gemini API for analysis.
 
-2. Install dependencies:
-   pip install pandas sqlalchemy pyscopg2
+**fetch_anomaly_data(energy_threshold)**
+- Queries plants with `capacity_mw` below a configurable threshold
+- Returns a structured DataFrame ordered by capacity
 
-3. Environmental Configuration:
-   Ensure your Database URI is correctly set in the script's CONFIG block:
-   postgresql://username:password@localhost:5432/energy_db
+**generate_ai_report(anomaly_df)**
+- Formats query results into a structured prompt with labelled context sections
+- Sends to `gemini-2.5-flash` with a Reliability Engineer system instruction and `temperature=0.2`
+- Returns a formatted Operational Incident Summary covering:
+  - Fuel type and country concentration patterns
+  - Renewable vs non-renewable grid footprint assessment
+  - Three specific engineering remediation steps
 
-4. Execute
+---
+
+## Project Structure
+
+```
+EnergyDataPipeline/
+├── pipeline.py        # ETL layer: Extract, Transform, Load
+├── analyzer.py        # AI layer: PostgreSQL query + Gemini API
+├── .env               # Environment variables (not committed)
+├── .env.example       # Template for environment setup
+├── requirements.txt   # Python dependencies
+└── README.md
+```
+
+---
+
+## Setup
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/shreyanshgautam3/EnergyDataPipeline
+cd EnergyDataPipeline
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure environment variables
+
+Copy the example file and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+`.env.example`:
+
+```
+DATA_PATH=path/to/global_power_plant_database.csv
+DATABASE_URL=postgresql://user:password@localhost:5432/energy_db
+
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=energy_db
+
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### 4. Download the dataset
+
+Download `global_power_plant_database.csv` from the [WRI Open Data Portal](https://datasets.wri.org/dataset/globalpowerplantdatabase) and set its path in `DATA_PATH`.
+
+---
+
+## Usage
+
+**Step 1 — Run the ETL pipeline** to load cleaned data into PostgreSQL:
+
+```bash
+python pipeline.py
+```
+
+**Step 2 — Run the AI analyzer** to generate an incident report:
+
+```bash
+python analyzer.py
+```
+
+The threshold defaults to `150.0 MW`. To adjust it, modify the `energy_threshold` parameter in `analyzer.py`:
+
+```python
+raw_anomalies = analyzer.fetch_anomaly_data(energy_threshold=300.0)
+```
+
+---
+
+## Dependencies
+
+```
+pandas
+sqlalchemy
+psycopg2-binary
+python-dotenv
+google-genai
+```
+
+---
+
+## Key Technical Decisions
+
+| Decision | Reason |
+|---|---|
+| `category` dtype for country and fuel columns | Reduces memory footprint on high-cardinality string columns |
+| Fuel-grouped median imputation | Preserves domain context when filling missing commissioning years |
+| `urllib.parse.quote_plus` for DB password | Handles special characters in passwords safely |
+| `temperature=0.2` for Gemini | Keeps model output deterministic and technically precise |
+| Structured prompt with labelled sections | Constrains model output format for consistent, parseable reports |
+
+---
+
+## Renewable Classification
+
+The following fuel types are classified as renewable:
+
+`Hydro` · `Wind` · `Solar` · `Biomass` · `Geothermal` · `Wave and Tidal`
