@@ -31,7 +31,7 @@ class PowerPlantETL:
         # Cleaning
         df['name'] = df['name'].str.strip().str.title()
 
-        # Contextual Imputation (Corrected spelling)
+        # Contextual Imputation
         df['commissioning_year'] = df.groupby('fuel1', observed = True)['commissioning_year'].transform(
             lambda x: x.fillna(x.median())
         )
@@ -53,8 +53,7 @@ class PowerPlantETL:
             print(f"Database Error: {e}")
 
 if __name__ == "__main__":
-    # PRO-TIP: Replace these hardcoded strings with os.environ.get() values 
-    # to read from your safe .env file locally!
+    # Hardcoded strings to os.environ.get() values, to read safe .env file locally!
     CONFIG = {
         'path': os.environ.get('DATA_PATH', r"D:\Python_Projects\Projects\Global Power Plant\globalpowerplantdatabasev110\global_power_plant_database.csv"),
         'db_uri': os.environ.get('DATABASE_URL', "postgresql://postgres:YOUR_PASSWORD_HERE@localhost:5432/energy_db")
@@ -65,4 +64,4 @@ if __name__ == "__main__":
     raw_df = etl.extract()
     cleaned_df = etl.transform(raw_df)
     etl.load(cleaned_df, "power_plants_cleaned")
-    print("\n--- ETL Pipeline Complete")
+    print("\nETL Pipeline Completed")
