@@ -55,9 +55,12 @@ class PowerPlantETL:
 if __name__ == "__main__":
     # Hardcoded strings to os.environ.get() values, to read safe .env file locally!
     CONFIG = {
-        'path': os.environ.get('DATA_PATH', r"D:\Python_Projects\Projects\Global Power Plant\globalpowerplantdatabasev110\global_power_plant_database.csv"),
-        'db_uri': os.environ.get('DATABASE_URL', "postgresql://postgres:YOUR_PASSWORD_HERE@localhost:5432/energy_db")
+        'path': os.environ.get('DATA_PATH'),
+        'db_uri': os.environ.get('DATABASE_URL')
     }
+    if not CONFIG['path'] or not CONFIG['db_uri']:
+        print("Error: DATA_PATH and DATABASE_URL must be set in environmental variables.")
+        sys.exit(1)
 
     etl = PowerPlantETL(CONFIG)
 
